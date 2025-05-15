@@ -29,6 +29,9 @@ export default () => {
   logger.log(`Environment ${env}`);
   logger.log(`Puerto ${validatedConfig.app.port}`);
   logger.log(`Nombre ${validatedConfig.app.name}`);
+  logger.log(`BD ${process.env.MONGO_URI}`);
+  logger.log(`Frontend ${validatedConfig.app.frontendUrl}`);
+  logger.log(`Allowed Origins ${validatedConfig.app.allowedOrigins}`);
 
   return config;
 };

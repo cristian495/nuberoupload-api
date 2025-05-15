@@ -1,7 +1,14 @@
+import { allow } from 'joi';
+
 export default (env) => {
   const config = {
     development: () => {
-      return { port: 3000, name: 'Nuberoupload' };
+      return {
+        port: 8000,
+        name: 'Nuberoupload',
+        frontendUrl: 'http://localhost:3001',
+        allowedOrigins: ['http://localhost:3001', 'http://localhost:3000'],
+      };
     },
     testing: () => {
       return { port: null, name: 'Nuberoupload' };
