@@ -1,8 +1,8 @@
-// upload-files.dto.ts
+// upload-file.dto.ts
 import { Transform } from 'class-transformer';
 import { ArrayNotEmpty, IsArray, IsMongoId, IsNotEmpty, IsString } from 'class-validator';
 
-export class UploadFilesDto {
+export class UploadFileDto {
   @IsString()
   @IsNotEmpty()
   folderName: string;

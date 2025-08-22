@@ -9,43 +9,66 @@ import {
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { UploadsService } from './uploads.service';
 import { diskStorage } from 'multer';
-import { UploadMediaDto } from './dto/upload-media.dto';
+import { UploadFileDto } from './dto/upload-file.dto';
 
 @Controller('uploads')
 export class UploadsController {
   constructor(private readonly uploadsService: UploadsService) {}
 
-  @Post('media')
+  @Post('file')
   @UseInterceptors(
     FilesInterceptor('file', undefined, {
       storage: diskStorage({ destination: './multer-uploads' }),
       limits: { fileSize: 500 * 1024 * 1024 }, // 500MB por archivo
     }),
   )
-  async uploadMedia(
-    @UploadedFiles() file: Express.Multer.File[],
-    @Body() body: UploadMediaDto,
+  async uploadFile(
+    @UploadedFiles() files: Express.Multer.File[],
+    @Body() body: UploadFileDto,
   ) {
-    if (!file) {
-      throw new BadRequestException('Al menos un archivo es requerido');
+    const userId = 'exampleId';
+
+    if (!files || files.length === 0) {
+      throw new BadRequestException('At least one file is required');
     }
 
-    const { uploadId, folderName } = body;
+    const { uploadId, folderName, providerIds } = body;
+    const uploadedFile = files[0];
 
-    // guarda el archivo en disco
-    const savedPath = await this.uploadsService.saveFile(file[0], uploadId);
+    // Validar que el uploadId no exista ya
+    const uploadExists = await this.uploadsService.checkUploadIdExists(uploadId);
+    if (uploadExists) {
+      throw new BadRequestException(`Upload with ID '${uploadId}' already exists`);
+    }
 
-    // registra en BD
-    const media = await this.uploadsService.registerMediaItem(
+    // 1. Save file temporarily to local storage
+    const temporaryFilePath = await this.uploadsService.saveFileTemporarily(
+      uploadedFile,
       uploadId,
-      file[0].originalname,
+    );
+
+    // 2. Create file record in database
+    const fileRecord = await this.uploadsService.createFileRecord(
+      uploadId,
+      uploadedFile.originalname,
       folderName,
     );
 
+    // 3. Process file to storage providers asynchronously
     setImmediate(() => {
-      this.uploadsService.processToProviders(savedPath, uploadId);
+      this.uploadsService.uploadToStorageProviders({
+        filePath: temporaryFilePath,
+        uploadId,
+        providerIds,
+        userId,
+        fileCategory: fileRecord.file.category,
+      });
     });
 
-    return { success: true, media };
+    return {
+      success: true,
+      file: fileRecord.file,
+      folder: fileRecord.folder,
+    };
   }
 }

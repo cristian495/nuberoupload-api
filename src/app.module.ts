@@ -6,31 +6,38 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { UploadsModule } from './modules/uploads/uploads.module';
 import { RealTimeModule } from './modules/real-time/real-time.module';
 import { DoodstreamModule } from './modules/doodstream/doodstream.module';
-import config from './config';
+import config, { Env } from './config';
 import * as Joi from 'joi';
 import { MongooseModule } from '@nestjs/mongoose';
-import { MediaModule } from './modules/media/media.module';
+import { FilesModule } from './modules/files/files.module';
+import { StorageProvidersModule } from './modules/storage-providers/storage-providers.module';
+import { EncryptionModule } from './modules/encryption/encryption.module';
+import { ProviderTemplatesModule } from './modules/provider-templates/provider-templates.module';
+import { DBConfig } from './config/db.config';
+
+const currentENV = process.env.NODE_ENV as Env;
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [config],
-      envFilePath: [`.env.${process.env.NODE_ENV}`, '.env'],
+      load: config,
+      envFilePath: [`.env.${currentENV}`, '.env'],
       validationSchema: Joi.object({
-        // solo valida lo que está en el .env y comando de ejecución
+        // solo valida lo que está en el .env y en el comando de ejecución
         JWT_SECRET: Joi.string().required(),
         NODE_ENV: Joi.string()
           .valid('development', 'testing', 'staging', 'production')
           .required(),
         DOODSTREAM_API_KEY: Joi.string().required(),
         MONGO_URI: Joi.string().required(),
+        ENCRYPTION_KEY: Joi.string().required(),
       }),
     }),
     MongooseModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        uri: config.get<string>('MONGO_URI'),
+        uri: config.get<DBConfig>('db')?.mongoURI,
       }),
     }),
     UsersModule,
@@ -38,7 +45,10 @@ import { MediaModule } from './modules/media/media.module';
     UploadsModule,
     RealTimeModule,
     DoodstreamModule,
-    MediaModule,
+    FilesModule,
+    StorageProvidersModule,
+    EncryptionModule,
+    ProviderTemplatesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

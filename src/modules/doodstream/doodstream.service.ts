@@ -5,12 +5,15 @@ import * as fs from 'fs';
 import FormData from 'form-data';
 import ProgressStream from 'progress-stream';
 import { WsEmitterService } from '../real-time/ws-emitter.service';
-import { StorageProviders } from 'src/common/types/storage-providers';
+import { StorageProvidersCodes } from 'src/common/types/storage-providers-codes';
 import got from 'got';
 
 import { pipeline as streamPipeline } from 'node:stream/promises';
 import { Writable } from 'node:stream';
 import { uploadWithProgress } from 'src/common/helpers/upload-with-progress.util';
+import { DoodstreamConfig as DoodstreamConfigType } from './types/doodstream-config.interface';
+import { UploadResult } from 'src/common/types/upload-result';
+import { UploadProvider } from 'src/common/types/upload-provider.interface';
 
 export interface DoodstreamUploadResponse {
   status: number;
@@ -39,50 +42,50 @@ export interface DoodstreamGetUploadUrlResponse {
   result: string;
 }
 
-export interface UploadResult {
-  provider: string;
-  url: string;
-  metadata?: {
-    filecode?: string;
-    thumbnail?: string;
-    size?: number;
-    [key: string]: any;
-  };
-}
-
 @Injectable()
-export class DoodstreamService {
-  private readonly apiKey: string;
+export class DoodstreamService implements UploadProvider<DoodstreamConfigType> {
   constructor(
-    private readonly configService: ConfigService,
     private wsEmitter: WsEmitterService,
-  ) {
-    this.apiKey = this.configService.get<string>('DOODSTREAM_API_KEY') || '';
-  }
+  ) {}
 
   async upload({
+    providerId,
+    providerConfig,
     filePath,
     originalName,
     uploadId,
   }: {
+    providerId: string;
+    providerConfig: DoodstreamConfigType;
     filePath: string;
     originalName: string;
     uploadId: string;
-    ƒ;
   }): Promise<UploadResult> {
+    const apiKey = providerConfig.apiKey; // ✅ Type-safe access
+
     const serverRes = await got
-      .get(`https://doodapi.co/api/upload/server?key=${this.apiKey}`)
+      .get(`https://doodapi.co/api/upload/server?key=${apiKey}`)
       .json<DoodstreamGetUploadUrlResponse>();
     const uploadUrl = serverRes.result;
 
+    console.log('uploadWithProgress', {
+      url: uploadUrl,
+      filePath,
+      originalName,
+      fields: { api_key: apiKey },
+      uploadId,
+      io: this.wsEmitter,
+      provider: StorageProvidersCodes.DOODSTREAM,
+    });
     const res = await uploadWithProgress({
       url: uploadUrl,
       filePath,
       originalName,
-      fields: { api_key: this.apiKey },
+      fields: { api_key: apiKey },
       uploadId,
+      providerId,
       io: this.wsEmitter,
-      provider: StorageProviders.DOODSTREAM,
+      provider: StorageProvidersCodes.DOODSTREAM,
     });
 
     const result = res.raw?.result?.[0];
@@ -91,7 +94,7 @@ export class DoodstreamService {
     }
 
     return {
-      provider: StorageProviders.DOODSTREAM,
+      provider: StorageProvidersCodes.DOODSTREAM,
       url: `https://dood.to/e/${result.filecode}`,
       metadata: {
         filecode: result.filecode,

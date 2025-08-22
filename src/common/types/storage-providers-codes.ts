@@ -1,4 +1,4 @@
-export enum StorageProviders {
+export enum StorageProvidersCodes {
   DOODSTREAM = 'doodstream',
   MEGA_NZ = 'mega.nz',
 }

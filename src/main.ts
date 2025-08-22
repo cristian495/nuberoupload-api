@@ -4,20 +4,21 @@ import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { json } from 'express';
+import { AppConfig } from './config/app.config';
+import { AllExceptionsFilter } from './common/filters/exceptions.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const config = app.get(ConfigService); // 🔐 accedemos a toda la config
-
+  const appConfig = config.getOrThrow<AppConfig>('app');
   app.use(json({ limit: '500mb' })); // ✅ para archivos grandes
 
   app.enableCors({
-    origin: [
-      config.getOrThrow<string>('app.frontendUrl'),
-      config.getOrThrow<string>('app.allowedOrigins'),
-    ], // ✅ accedemos a la config
+    origin: [appConfig.frontendUrl, appConfig.allowedOrigins], // ✅ accedemos a la config
     credentials: true,
   });
+
+  app.useGlobalFilters(new AllExceptionsFilter());
 
   app.useGlobalPipes(
     new ValidationPipe({

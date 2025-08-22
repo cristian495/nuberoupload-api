@@ -8,6 +8,7 @@ interface UploadWithProgressParams {
   originalName: string;
   fields?: Record<string, string>;
   uploadId: string;
+  providerId: string;
   io?: {
     emit: (event: string, data: any) => void;
   };
@@ -20,12 +21,14 @@ export async function uploadWithProgress({
   originalName,
   fields = {},
   uploadId,
+  providerId,
   io,
   provider,
 }: UploadWithProgressParams) {
   console.log(`[Upload] ${provider} ${uploadId}:`, url);
 
   const fileStream = fs.createReadStream(filePath);
+
   const form = new FormData();
   form.append('file', fileStream, { filename: originalName });
   for (const key in fields) {
@@ -42,6 +45,7 @@ export async function uploadWithProgress({
     console.log(`[Upload] ${provider} ${uploadId}: ${percent}%`);
     io?.emit('upload-progress', {
       uploadId,
+      providerId,
       provider,
       status: 'uploading',
       progress: percent,
