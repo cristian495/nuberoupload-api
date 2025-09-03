@@ -36,6 +36,10 @@ export class CredentialFieldDto {
   description?: string;
 
   @IsOptional()
+  @IsString()
+  defaultValue?: string;
+
+  @IsOptional()
   @IsArray()
   @IsObject({ each: true })
   options?: { value: string; label: string }[];
@@ -50,15 +54,13 @@ export class CreateProviderTemplateDto {
   @IsNotEmpty()
   code: string;
 
-  @IsString()
-  @IsNotEmpty()
-  icon: string;
-
   @IsArray()
   @IsString({ each: true })
-  @IsIn(ALL_SUPPORTED_EXTENSIONS, { 
-    each: true, 
-    message: 'Extension must be one of the supported extensions: ' + ALL_SUPPORTED_EXTENSIONS.join(', ')
+  @IsIn(ALL_SUPPORTED_EXTENSIONS, {
+    each: true,
+    message:
+      'Extension must be one of the supported extensions: ' +
+      ALL_SUPPORTED_EXTENSIONS.join(', '),
   })
   supportedExtensions: string[];
 

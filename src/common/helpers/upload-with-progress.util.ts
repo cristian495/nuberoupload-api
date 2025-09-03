@@ -1,18 +1,20 @@
 import fs from 'fs';
 import FormData from 'form-data';
 import got from 'got';
+import { Logger } from '@nestjs/common';
 
 interface UploadWithProgressParams {
   url: string;
   filePath: string;
   originalName: string;
   fields?: Record<string, string>;
-  uploadId: string;
+  fileId: string; // Actually fileId, but kept for compatibility
   providerId: string;
   io?: {
     emit: (event: string, data: any) => void;
   };
   provider: string;
+  logger?: Logger;
 }
 
 export async function uploadWithProgress({
@@ -20,12 +22,17 @@ export async function uploadWithProgress({
   filePath,
   originalName,
   fields = {},
-  uploadId,
+  fileId,
   providerId,
   io,
   provider,
+  logger,
 }: UploadWithProgressParams) {
-  console.log(`[Upload] ${provider} ${uploadId}:`, url);
+  if (logger) {
+    logger.log(`📤 Iniciando subida de '${originalName}' a ${provider}`);
+  } else {
+    console.log(`[Upload] ${provider} ${fileId}:`, url);
+  }
 
   const fileStream = fs.createReadStream(filePath);
 
@@ -42,14 +49,11 @@ export async function uploadWithProgress({
 
   request.on('uploadProgress', (progress) => {
     const percent = Math.round(progress.percent * 100);
-    console.log(`[Upload] ${provider} ${uploadId}: ${percent}%`);
-    io?.emit('upload-progress', {
-      uploadId,
-      providerId,
-      provider,
-      status: 'uploading',
-      progress: percent,
-    });
+    if (logger && percent % 10 === 0) { // Solo mostrar cada 10%
+      logger.debug(`📤 ${percent}% - '${originalName}' → ${provider}`);
+    } else if (!logger) {
+      console.log(`[Upload] ${provider} ${fileId}: ${percent}%`);
+    }
   });
 
   let responseChunks: Buffer[] = [];
@@ -60,7 +64,11 @@ export async function uploadWithProgress({
   });
 
   const body = Buffer.concat(responseChunks).toString();
-  console.log(`[Upload] ${provider} ${uploadId}:`, body);
+  if (logger) {
+    logger.log(`✅ Subida completada: '${originalName}' → ${provider}`);
+  } else {
+    console.log(`[Upload] ${provider} ${fileId}:`, body);
+  }
   const raw = JSON.parse(body);
 
   return { raw, body };

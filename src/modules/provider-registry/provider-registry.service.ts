@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { StorageProvidersCodes } from '../../common/types/storage-providers-codes';
 import { DoodstreamService } from '../doodstream/doodstream.service';
 import { UploadProvider } from '../../common/types/upload-provider.interface';
+import { StorjService } from '../storj/storj.service';
 
 /**
  * Servicio centralizado para el registro de providers de almacenamiento
@@ -13,12 +14,14 @@ export class ProviderRegistryService {
 
   constructor(
     private doodstreamService: DoodstreamService,
+    private storjService: StorjService,
     // Agregar nuevos servicios aquí cuando se implementen
     // private megaNzService: MegaNzService,
   ) {
     // Registry centralizado - solo providers con servicio implementado
     this.availableProviders = {
       [StorageProvidersCodes.DOODSTREAM]: this.doodstreamService,
+      [StorageProvidersCodes.STORJ]: this.storjService,
       // [StorageProvidersCodes.MEGA_NZ]: this.megaNzService,
     };
   }

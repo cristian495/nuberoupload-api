@@ -13,7 +13,9 @@ import { FilesModule } from './modules/files/files.module';
 import { StorageProvidersModule } from './modules/storage-providers/storage-providers.module';
 import { EncryptionModule } from './modules/encryption/encryption.module';
 import { ProviderTemplatesModule } from './modules/provider-templates/provider-templates.module';
+import { AuthModule } from './modules/auth/auth.module';
 import { DBConfig } from './config/db.config';
+import { StorjModule } from './modules/storj/storj.module';
 
 const currentENV = process.env.NODE_ENV as Env;
 
@@ -32,6 +34,9 @@ const currentENV = process.env.NODE_ENV as Env;
         DOODSTREAM_API_KEY: Joi.string().required(),
         MONGO_URI: Joi.string().required(),
         ENCRYPTION_KEY: Joi.string().required(),
+        GOOGLE_CLIENT_ID: Joi.string().required(),
+        GOOGLE_CLIENT_SECRET: Joi.string().required(),
+        GOOGLE_CALLBACK_URL: Joi.string().required(),
       }),
     }),
     MongooseModule.forRootAsync({
@@ -49,6 +54,8 @@ const currentENV = process.env.NODE_ENV as Env;
     StorageProvidersModule,
     EncryptionModule,
     ProviderTemplatesModule,
+    AuthModule,
+    StorjModule,
   ],
   controllers: [AppController],
   providers: [AppService],
