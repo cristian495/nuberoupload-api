@@ -36,4 +36,17 @@ export class EncryptionService {
     decrypted = Buffer.concat([decrypted, decipher.final()]);
     return decrypted.toString('utf8');
   }
+
+  /**
+   * Desencripta toda la configuración de un proveedor
+   */
+  decryptProviderConfig(encryptedConfig: Record<string, any>): Record<string, any> {
+    const decryptedConfig: Record<string, any> = {};
+
+    for (const [key, encryptedValue] of Object.entries(encryptedConfig)) {
+      decryptedConfig[key] = this.decrypt(encryptedValue);
+    }
+
+    return decryptedConfig;
+  }
 }

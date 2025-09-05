@@ -21,17 +21,23 @@ export class CredentialField {
   @Prop()
   description?: string;
 
+  @Prop()
+  defaultValue?: string;
+
   @Prop({
-    type: [{
-      value: { type: String, required: true },
-      label: { type: String, required: true }
-    }],
-    default: []
+    type: [
+      {
+        value: { type: String, required: true },
+        label: { type: String, required: true },
+      },
+    ],
+    default: [],
   })
   options?: { value: string; label: string }[];
 }
 
-export const CredentialFieldSchema = SchemaFactory.createForClass(CredentialField);
+export const CredentialFieldSchema =
+  SchemaFactory.createForClass(CredentialField);
 
 @Schema({ timestamps: true, collection: 'provider_templates' })
 export class ProviderTemplate extends Document {
@@ -40,9 +46,6 @@ export class ProviderTemplate extends Document {
 
   @Prop({ required: true, unique: true })
   code: string;
-
-  @Prop({ required: true })
-  icon: string;
 
   @Prop({ type: [String], default: [] })
   supportedExtensions: string[];
@@ -54,4 +57,5 @@ export class ProviderTemplate extends Document {
   fields: CredentialField[];
 }
 
-export const ProviderTemplateSchema = SchemaFactory.createForClass(ProviderTemplate);
+export const ProviderTemplateSchema =
+  SchemaFactory.createForClass(ProviderTemplate);

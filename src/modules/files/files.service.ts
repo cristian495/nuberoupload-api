@@ -6,19 +6,23 @@ import { Model, Types } from 'mongoose';
 import { v4 as uuid } from 'uuid';
 import { StorageProvider } from '../storage-providers/schemas/storage-provider.schema';
 import { FileCategory } from '../../common/constants/file-extensions';
+import { StorageProvidersService } from '../storage-providers/storage-providers.service';
+import { EncryptionService } from '../encryption/encryption.service';
+import { UploadResult } from '../../common/types/upload-result';
 
 interface FileCreationData {
-  uploadId: string;
+  userId: string;
   originalName: string;
   folderName: string;
   fileCategory: FileCategory;
 }
 
-interface ProviderLinkData {
-  uploadId: string;
+interface UploadResultData {
+  fileId: string;
   provider: StorageProvider;
   downloadUrl: string;
   thumbnailUrl: string;
+  metadata?: Record<string, any>; // Metadata específica del provider
 }
 
 @Injectable()
@@ -26,35 +30,22 @@ export class FilesService {
   constructor(
     @InjectModel(FileItem.name) private fileItemModel: Model<FileItem>,
     @InjectModel(Folder.name) private folderModel: Model<Folder>,
+    private storageProvidersService: StorageProvidersService,
+    private encryptionService: EncryptionService,
   ) {}
 
   // 🎯 FILE RECORD MANAGEMENT
-  async generateUniqueUploadId(): Promise<string> {
-    let uploadId: string;
-    let alreadyExists = true;
-
-    do {
-      uploadId = uuid();
-      alreadyExists = !!(await this.fileItemModel.exists({ uploadId }));
-    } while (alreadyExists);
-
-    return uploadId;
-  }
-
-  async uploadIdExists(uploadId: string): Promise<boolean> {
-    return !!(await this.fileItemModel.exists({ uploadId }));
-  }
 
   async createFileRecord(data: FileCreationData) {
-    const { uploadId, originalName, folderName, fileCategory } = data;
+    const { userId, originalName, folderName, fileCategory } = data;
 
     const targetFolder = await this.ensureFolderExists(folderName);
 
     const file = await new this.fileItemModel({
-      uploadId,
+      userId,
       originalName,
       folderId: targetFolder._id,
-      providers: [],
+      uploads: [],
       category: fileCategory,
       status: 'pending',
     }).save();
@@ -62,20 +53,26 @@ export class FilesService {
     return { file, folder: targetFolder };
   }
 
-  // 🎯 PROVIDER LINK MANAGEMENT
-  async attachProviderUrl(data: ProviderLinkData): Promise<void> {
-    const { uploadId, provider, downloadUrl, thumbnailUrl } = data;
+  // 🎯 UPLOAD RESULT MANAGEMENT
 
+  /**
+   * Registra el resultado exitoso de un upload sin distorsión de parámetros
+   * Método más directo y legible que addUploadResult
+   */
+  async addUploadResult(
+    fileId: string,
+    uploadResult: UploadResult,
+  ): Promise<void> {
     await this.fileItemModel.updateOne(
-      { uploadId },
+      { _id: fileId },
       {
         $push: {
-          providers: {
-            code: provider.code,
-            _id: provider._id,
-            name: provider.name,
-            url: downloadUrl,
-            thumbnail: thumbnailUrl,
+          uploads: {
+            providerCode: uploadResult.providerCode,
+            providerId: uploadResult.providerId,
+            url: uploadResult.url,
+            thumbnail: uploadResult.metadata.thumbnail || '',
+            metadata: uploadResult.metadata,
           },
         },
         $set: { status: 'completed' },
@@ -84,11 +81,11 @@ export class FilesService {
   }
 
   async markFileUploadAsFailed(
-    uploadId: string,
+    fileId: string,
     errorMessage: string,
   ): Promise<void> {
     await this.fileItemModel.updateOne(
-      { uploadId },
+      { _id: fileId },
       {
         $set: {
           status: 'failed',
@@ -128,6 +125,7 @@ export class FilesService {
 
   private async calculateFileStatsByFolder() {
     const aggregationResult = await this.fileItemModel.aggregate([
+      { $match: { status: 'completed' } },
       {
         $group: {
           _id: '$folderId',
@@ -153,7 +151,7 @@ export class FilesService {
       {
         $group: {
           _id: '$folderId',
-          latestThumbnail: { $first: '$providers.thumbnail' },
+          latestThumbnail: { $first: '$uploads.thumbnail' },
         },
       },
       {
@@ -195,7 +193,7 @@ export class FilesService {
     return {
       ...folder,
       files: folderFiles,
-      thumbnail: latestFile?.providers[0]?.thumbnail || null,
+      thumbnail: latestFile?.uploads[0]?.thumbnail || null,
       globalStats: {
         totalImages: globalImageCount,
         totalVideos: globalVideoCount,
@@ -220,5 +218,34 @@ export class FilesService {
     }
 
     return files;
+  }
+
+  // 🎯 STREAMING SUPPORT
+  async getFileById(fileId: string): Promise<FileItem | null> {
+    return this.fileItemModel.findById(fileId).populate('folderId').lean();
+  }
+
+  async getProviderConfig(providerId: string): Promise<Record<string, any>> {
+    const provider = await this.storageProvidersService.findById(providerId);
+    if (!provider) {
+      throw new Error(`Provider not found: ${providerId}`);
+    }
+
+    return this.encryptionService.decryptProviderConfig(provider.config);
+  }
+
+  // 🎯 ELIMINACIÓN DE UPLOADS
+  async removeUploadFromFile(
+    fileId: string,
+    providerId: string,
+  ): Promise<void> {
+    await this.fileItemModel.updateOne(
+      { _id: fileId },
+      {
+        $pull: {
+          uploads: { providerId: providerId },
+        },
+      },
+    );
   }
 }

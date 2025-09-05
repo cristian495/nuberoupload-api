@@ -1,8 +1,8 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { Document, ObjectId } from 'mongoose';
 
 @Schema({ timestamps: true, collection: 'storage_providers' })
-export class StorageProvider extends Document {
+export class StorageProvider extends Document<ObjectId> {
   @Prop({ required: true })
   userId: string;
 
@@ -29,6 +29,15 @@ export class StorageProvider extends Document {
 
   @Prop({ default: true })
   isActive: boolean;
+
+  @Prop({ default: null })
+  lastConnectionCheck?: Date;
+
+  @Prop({ default: null })
+  isConnectionHealthy?: boolean;
+
+  @Prop({ default: null })
+  connectionError?: string;
 }
 
 export const StorageProviderSchema =
