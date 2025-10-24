@@ -169,6 +169,13 @@ export class StorageProvidersService {
         return result;
       }
 
+      // Validar que tenga configuración almacenada
+      if (!provider.config) {
+        result.error = 'Provider has no stored configuration (might be a RUNTIME provider)';
+        await this.updateConnectionStatus(providerId, result);
+        return result;
+      }
+
       // Desencriptar la configuración
       const decryptedConfig = Object.entries(provider.config).reduce(
         (acc, [key, value]) => {

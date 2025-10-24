@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, ObjectId } from 'mongoose';
+import { ConfigSource } from 'src/common/enums/config-source.enum';
 
 @Schema({ timestamps: true, collection: 'storage_providers' })
 export class StorageProvider extends Document<ObjectId> {
@@ -18,8 +19,11 @@ export class StorageProvider extends Document<ObjectId> {
   @Prop({})
   description?: string; // Ej: "Especializado en imágenes", "Especializado en videos"
 
-  @Prop({ type: Object, required: true })
-  config: Record<string, any>;
+  @Prop({ required: true, enum: ConfigSource, default: ConfigSource.DATABASE })
+  configSource: ConfigSource; // DATABASE o RUNTIME
+
+  @Prop({ type: Object, required: false })
+  config?: Record<string, any>;
 
   @Prop({ type: Object, required: true })
   configLastChars: Record<string, any>;
