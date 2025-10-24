@@ -15,6 +15,8 @@ import {
   FileExtension,
   FileCategory,
 } from '../../common/constants/file-extensions';
+import { UploadFactory } from './upload-factory.service';
+import { RuntimeProviderCredentials } from 'src/common/interfaces/provider-operations.interface';
 
 interface UploadToProvidersOptions {
   filePath: string;
@@ -22,12 +24,14 @@ interface UploadToProvidersOptions {
   providerIds: string[];
   userId: string;
   fileCategory: FileCategory;
+  providerCredentials?: RuntimeProviderCredentials[]; // For RUNTIME mode
 }
 
 interface DeleteFromProvidersOptions {
   fileId: string;
   userId: string;
   uploads: UploadResult[];
+  providerCredentials?: RuntimeProviderCredentials[]; // For RUNTIME mode - required for RUNTIME providers
 }
 
 interface UploadProgressData {
@@ -51,6 +55,7 @@ export class UploadsService {
     private storageProvService: StorageProvidersService,
     private providerRegistry: ProviderRegistryService,
     private encryptionService: EncryptionService,
+    private uploadFactory: UploadFactory,
   ) {}
 
   // 🎯 GESTIÓN DE ARCHIVOS LOCALES
@@ -111,33 +116,93 @@ export class UploadsService {
       '[Upload Service] Starting upload to storage providers',
       options,
     );
-    const { filePath, fileId, providerIds, userId, fileCategory } = options;
+    const { filePath, fileId, providerIds, userId, fileCategory, providerCredentials } = options;
 
     const configuredProviders = await this.findUserStorageProviders(
       providerIds,
       userId,
     );
 
-    for (const provider of configuredProviders) {
-      const { supportedExtensions, code, _id, name } = provider;
+    // Crear mapa de credenciales runtime si están disponibles
+    const credentialsMap = providerCredentials
+      ? new Map(
+          providerCredentials.map((pc) => [pc.providerId, pc.credentials])
+        )
+      : new Map();
+
+    // Obtener información del archivo (carpeta) una sola vez
+    const fileInfo = await this.filesService.getFileById(fileId);
+    if (!fileInfo || !fileInfo.folderId) {
+      throw new Error(
+        `File or folder information not found for fileId: ${fileId}`,
+      );
+    }
+    const folderName = (fileInfo.folderId as any).name;
+    if (!folderName) {
+      throw new Error(`Folder name not found for fileId: ${fileId}`);
+    }
+
+    // Procesar uploads en paralelo
+    const uploadPromises = configuredProviders.map(async (provider) => {
+      const { _id, name, configSource } = provider;
+      const providerId = _id.toString();
 
       try {
-        if (!this.validateProviderSupportsFileType(provider, fileCategory)) {
+        // ✅ USAR FACTORY para validar
+        if (!this.uploadFactory.validateProvider(provider, fileCategory)) {
           throw new Error(
             `Provider '${name}' does not support '${fileCategory}' files`,
           );
         }
-        await this.uploadFileToSingleProvider(provider, filePath, fileId);
-      } catch (error) {
-        console.error(error);
+
         this.notifyUploadProgress({
           fileId,
-          providerId: _id.toString(),
+          providerId,
+          status: 'starting',
+        });
+
+        const runtimeCredentials = credentialsMap.get(providerId);
+
+        // ✅ DELEGAR A STRATEGY via Factory
+        const result = await this.uploadFactory.processUpload(configSource, {
+          provider,
+          filePath,
+          fileId,
+          folderName,
+          runtimeCredentials,
+        });
+
+        if (result.success && result.url) {
+          // Guardar resultado en DB
+          await this.filesService.addUploadResult(fileId, {
+            providerCode: result.providerCode,
+            providerId: result.providerId,
+            url: result.url,
+            thumbnail: '', // TODO: Get from provider result
+            metadata: {}, // TODO: Get from provider result
+          });
+        }
+
+        this.notifyUploadProgress({
+          fileId,
+          providerId,
+          status: result.success ? 'completed' : 'error',
+          url: result.url,
+          error: result.error,
+        });
+      } catch (error) {
+        console.error(`Upload failed for provider ${name}:`, error);
+        this.notifyUploadProgress({
+          fileId,
+          providerId,
           status: 'error',
           error: error.message,
         });
       }
-    }
+    });
+
+    // Ejecutar todas las subidas en paralelo
+    await Promise.allSettled(uploadPromises);
   }
 
   async findUserStorageProviders(
@@ -150,75 +215,6 @@ export class UploadsService {
   async getFileById(fileId: string) {
     return this.filesService.getFileById(fileId);
   }
-  // 🎯 UTILIDADES PRIVADAS
-
-  private validateProviderSupportsFileType(
-    provider: StorageProvider,
-    fileCategory: FileCategory,
-  ): boolean {
-    // Get all extensions for the given category
-    const categoryExtensions = FILE_EXTENSIONS[fileCategory];
-
-    // Check if provider supports at least one extension from this category
-    return categoryExtensions.some((extension) =>
-      provider.supportedExtensions.includes(extension),
-    );
-  }
-
-  private findStorageProvider(providerCode: string): UploadProvider {
-    return this.providerRegistry.getProviderService(providerCode);
-  }
-
-  private async uploadFileToSingleProvider(
-    provider: StorageProvider,
-    filePath: string,
-    fileId: string,
-  ): Promise<void> {
-    const { code, _id, name } = provider;
-
-    this.notifyUploadProgress({
-      fileId,
-      providerId: _id.toString(),
-      status: 'starting',
-    });
-
-    // Obtener información del archivo incluyendo la carpeta
-    const fileInfo = await this.filesService.getFileById(fileId);
-    if (!fileInfo || !fileInfo.folderId) {
-      throw new Error(
-        `File or folder information not found for fileId: ${fileId}`,
-      );
-    }
-
-    const folderName = (fileInfo.folderId as any).name;
-    if (!folderName) {
-      throw new Error(`Folder name not found for fileId: ${fileId}`);
-    }
-
-    // Desencriptar configuración del provider
-    const decryptedConfig = this.encryptionService.decryptProviderConfig(
-      provider.config,
-    );
-
-    const uploadFunction = this.findStorageProvider(code);
-    const uploadResult = await uploadFunction.upload({
-      providerId: _id.toString(),
-      providerConfig: decryptedConfig,
-      filePath,
-      originalName: path.basename(filePath),
-      fileId,
-      folderName,
-    });
-
-    await this.filesService.addUploadResult(fileId, uploadResult);
-
-    this.notifyUploadProgress({
-      fileId,
-      providerId: _id.toString(),
-      status: 'completed',
-      url: uploadResult.url,
-    });
-  }
 
   private notifyUploadProgress(data: UploadProgressData): void {
     this.wsEmitter.emit('upload-progress', data);
@@ -228,17 +224,64 @@ export class UploadsService {
   async deleteFromAllProviders(
     options: DeleteFromProvidersOptions,
   ): Promise<void> {
-    const { fileId, userId, uploads } = options;
+    const { fileId, userId, uploads, providerCredentials } = options;
 
     console.log(
       `[Delete] Starting deletion for file ${fileId} from ${uploads.length} providers`,
     );
 
-    for (const upload of uploads) {
-      const { providerCode, providerId } = upload;
+    // Crear mapa de credenciales runtime si están disponibles
+    const credentialsMap = providerCredentials
+      ? new Map(
+          providerCredentials.map((pc) => [pc.providerId, pc.credentials]),
+        )
+      : new Map();
+
+    // Procesar eliminaciones en paralelo
+    const deletePromises = uploads.map(async (upload) => {
+      const { providerCode, providerId, metadata } = upload;
 
       try {
-        await this.deleteFileFromSingleProvider(upload, fileId);
+        this.notifyDeletionProgress({
+          fileId,
+          provider: providerCode,
+          providerId,
+          status: 'starting',
+        });
+
+        // Obtener el proveedor de la BD
+        const storageProvider =
+          await this.storageProvService.findById(providerId);
+        if (!storageProvider) {
+          throw new Error(`Storage provider not found: ${providerId}`);
+        }
+
+        const runtimeCredentials = credentialsMap.get(providerId);
+
+        // ✅ DELEGAR A STRATEGY via Factory
+        const result = await this.uploadFactory.processDelete(
+          storageProvider.configSource,
+          {
+            provider: storageProvider,
+            metadata,
+            runtimeCredentials,
+          },
+        );
+
+        if (!result.success) {
+          throw new Error(result.error || 'Delete operation failed');
+        }
+
+        // Remover el upload del archivo en la base de datos
+        await this.filesService.removeUploadFromFile(fileId, providerId);
+
+        console.log(`[Delete] ${providerCode} ${fileId}: deleted successfully`);
+        this.notifyDeletionProgress({
+          fileId,
+          provider: providerCode,
+          providerId,
+          status: 'completed',
+        });
       } catch (error) {
         console.error(`Delete failed for provider ${providerCode}:`, error);
         this.notifyDeletionProgress({
@@ -249,53 +292,10 @@ export class UploadsService {
           error: error.message,
         });
       }
-    }
-  }
-
-  private async deleteFileFromSingleProvider(
-    upload: UploadResult,
-    fileId: string,
-  ): Promise<void> {
-    const { providerCode, providerId, metadata } = upload;
-
-    this.notifyDeletionProgress({
-      fileId,
-      provider: providerCode,
-      providerId,
-      status: 'starting',
     });
 
-    // Obtener configuración del proveedor
-    const storageProvider = await this.storageProvService.findById(providerId);
-    if (!storageProvider) {
-      throw new Error(`Storage provider not found: ${providerId}`);
-    }
-
-    const decryptedConfig = this.encryptionService.decryptProviderConfig(
-      storageProvider.config,
-    );
-
-    const deleteFunction = this.findStorageProvider(providerCode);
-    const deleteResult = await deleteFunction.delete({
-      providerId,
-      providerConfig: decryptedConfig,
-      metadata,
-    });
-
-    if (!deleteResult.success) {
-      throw new Error(deleteResult.error || 'Delete operation failed');
-    }
-
-    // Remover el upload del archivo en la base de datos
-    await this.filesService.removeUploadFromFile(fileId, providerId);
-
-    console.log(`[Delete] ${providerCode} ${fileId}: deleted successfully`);
-    this.notifyDeletionProgress({
-      fileId,
-      provider: providerCode,
-      providerId,
-      status: 'completed',
-    });
+    // Ejecutar todas las eliminaciones en paralelo
+    await Promise.allSettled(deletePromises);
   }
 
   private notifyDeletionProgress(data: {

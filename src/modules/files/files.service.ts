@@ -231,6 +231,10 @@ export class FilesService {
       throw new Error(`Provider not found: ${providerId}`);
     }
 
+    if (!provider.config) {
+      throw new Error(`Provider ${providerId} has no stored configuration (might be a RUNTIME provider)`);
+    }
+
     return this.encryptionService.decryptProviderConfig(provider.config);
   }
 
